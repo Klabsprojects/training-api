@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const rt_mst = require('./routes/master');
 const rt_frm = require('./routes/forms');
@@ -13,7 +14,7 @@ const rt_res = require('./routes/response');
 const rt_tra = require('./routes/training');
 const rt_upload = require('./routes/upload');
 
-const port = process.env.PORT || 3003;
+const port = process.env.PORT || 3005;
 const app = express();
 
 app.use(express.json());
@@ -31,6 +32,11 @@ function verifyToken(req, res, next) {
     next();
   });
 }
+
+// 1. Define the directory where your uploaded files are stored (server-side)
+const uploadsDirectory = path.join(__dirname, 'uploads');
+app.use('/static-files', express.static(uploadsDirectory));
+app.use('/uploads', express.static(uploadsDirectory));
 
 // Use the routes
 app.use('/master', verifyToken, rt_mst);
