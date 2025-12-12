@@ -1038,17 +1038,71 @@ exports.create = (req, res) => {
     }
 };
 
+// function finalizeTrainingCreation(res, connection, data, checklistRootId, checklistStatusFlag, user, subject, s_type) {
+    
+//     data.checklistRootId = checklistRootId;
+//     data.flag = checklistStatusFlag;
+    
+//     connection.query(`SELECT group_concat(id) ids FROM members WHERE status = 'Active' AND subject in (?) AND s_type in (?)`, [subject, s_type],(err, results) => {
+//         if (err) {
+//             return res.status(500).json({ error: err.message, data: data });
+//         } 
+        
+//         data.participants = results[0].ids;
+        
+//         connection.query('INSERT INTO trainings SET ?', data, (err, results) => {
+//             if (err) {
+//                 return res.status(500).json({ error: err.message, data: data });
+//             }
+            
+//             res.json({
+//                 error: false, 
+//                 message: 'Training Created Successfully', 
+//                 data: results, 
+//                 flag: checklistStatusFlag,
+//                 checklistRootId: checklistRootId,
+//                 user
+//             });
+//         });
+//     });
+// }
+
+
 function finalizeTrainingCreation(res, connection, data, checklistRootId, checklistStatusFlag, user, subject, s_type) {
     
     data.checklistRootId = checklistRootId;
     data.flag = checklistStatusFlag;
     
-    connection.query(`SELECT group_concat(id) ids FROM members WHERE status = 'Active' AND subject in (?) AND s_type in (?)`, [subject, s_type],(err, results) => {
+    // Handle dynamic WHERE clause based on presence of subject and s_type
+    let query = `SELECT group_concat(id) ids FROM members WHERE status = 'Active'`;
+    let queryParams = [];
+    
+    if ((subject && subject.length > 0) && (s_type && s_type.length > 0)) {
+      // console.log('Both subject and s_type provided', subject, s_type);
+        // Both provided: current logic
+        query += ` AND subject IN (?) AND s_type IN (?)`;
+        queryParams = [subject, s_type];
+    } else if ((subject && subject.length > 0)) {
+      // console.log('Only subject provided');
+        // Only subject provided
+        query += ` AND subject IN (?)`;
+        queryParams = [subject];
+    } else if ((s_type && s_type.length > 0)) {
+      // console.log('Only s_type provided');
+        // Only s_type provided
+        query += ` AND s_type IN (?)`;
+        queryParams = [s_type];
+    }
+    // If neither provided: query runs without subject/s_type filters
+    console.log('Final Query:', query, 'Params:', queryParams);
+    
+    connection.query(query, queryParams, (err, results) => {
         if (err) {
             return res.status(500).json({ error: err.message, data: data });
         } 
         
-        data.participants = results[0].ids;
+        // Handle case where no results found (results[0] might be undefined)
+        data.participants = results[0] && results[0].ids ? results[0].ids : null;
         
         connection.query('INSERT INTO trainings SET ?', data, (err, results) => {
             if (err) {
@@ -1066,6 +1120,7 @@ function finalizeTrainingCreation(res, connection, data, checklistRootId, checkl
         });
     });
 }
+
 
 exports.updateAssignmentInfo_old_02_02_2025 = async (req, res) => {
     console.log(req.body);
