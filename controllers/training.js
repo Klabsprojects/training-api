@@ -352,7 +352,43 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
     const id = req.params.id;
     const data = req.body;
     const user = req.user;
-    let partColumns = [];     
+    let partColumns = [];   
+    
+      // --- 1. Define the 8 Status Fields ---
+    const statusFields = [
+      'trainingNeedsFormShared', 'invitationSent',
+      'trainingTopicShared', 'trainingProfileShared',
+      'AttendanceDigitized', 'prePostAssessmentUploaded',
+      'trainingMaterialsUploaded', 'feedbackFormSent'
+    ];
+
+        // --- Handle Status and Reasons ---
+    statusFields.forEach(field => {
+        const reasonField = `${field}Reason`;
+
+        // Update Status
+        if (data[field] !== undefined) {
+            const val = data[field] === null ? 'NULL' : data[field];
+            partColumns.push(`${field} = ${val}`);
+        }
+
+        // Update Reason
+        if (data[reasonField] !== undefined) {
+            const reasonVal = data[reasonField] === null ? 'NULL' : `'${data[reasonField]}'`;
+            partColumns.push(`${reasonField} = ${reasonVal}`);
+        }
+    });
+
+    // --- 3. Handle New Optional Fields (meetingLink, taxonomy, topic) ---
+  const optionalFields = ['meetingLink', 'taxonomy', 'topic'];
+  optionalFields.forEach(field => {
+    if (data[field] !== undefined) {
+      // If the value is null, set DB to NULL, otherwise wrap string in quotes
+      const val = data[field] === null ? 'NULL' : `'${data[field]}'`;
+      partColumns.push(`${field} = ${val}`);
+    }
+  });
+
     if(data.add_participants)
         partColumns.push("participants = CASE WHEN participants IS NULL OR participants = '' THEN '"+data.add_participants+"' ELSE CONCAT(participants, ',', '"+data.add_participants+"') END");
     
@@ -375,17 +411,34 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
         partColumns.push(`images = '${JSON.stringify(data.images)}'`);
     if(data.topic_covered)
         partColumns.push(`topic_covered = '${data.topic_covered}'`);
+
+    // --- 4. Handle Completion Flag Logic ---
+    // Since we don't know the state of the other fields in the DB, we fetch the row first
+    connection.query('SELECT * FROM trainings WHERE id = ?', [id], (fetchErr, rows) => {
+      if (fetchErr || !rows.length) return res.status(500).json({ error: 'Training not found' });
+
+      const currentRecord = rows[0];
+      
+      // Determine if all 8 fields are filled by checking (New Data OR Existing DB Data)
+      const allFilled = statusFields.every(field => {
+        const val = data[field] !== undefined ? data[field] : currentRecord[field];
+        return val !== null && val !== undefined && val !== '';
+      });
+
+      partColumns.push(`statusFieldsCompletionFlag = ${allFilled ? 1 : 0}`);
             
-    let uQry = `UPDATE trainings SET ${partColumns.length ? partColumns.join(', ') : ''} WHERE id = ?`;        
-    // console.log(uQry);
-    connection.query(uQry, [id], (err) => {
-    if (err) 
-        res.status(500).json({ error: err.message, uQry, data});
-    else 
-        res.json({error: false, message: 'Form Updated', user});
+      let uQry = `UPDATE trainings SET ${partColumns.length ? partColumns.join(', ') : ''} WHERE id = ?`;        
+      // console.log(uQry);
+      connection.query(uQry, [id], (err) => {
+      if (err) 
+          res.status(500).json({ error: err.message, uQry, data});
+      else 
+          res.json({error: false, message: 'Form Updated', user});
+      });
     });
   };
 
+  
   exports.getparts = (req, res) => {
     const id = req.params.id;
     const user = req.user;
@@ -1005,21 +1058,23 @@ exports.create = (req, res) => {
     data.created_by = user.id;
 	  console.log(req.body);
 
-        // 1. Define the fields
-    const statusFields = [
-        'trainingNeedsFormShared', 'invitationSent', 
-        'trainingTopicShared', 'trainingProfileShared', 
-        'AttendanceDigitized', 'prePostAssessmentUploaded', 
-        'trainingMaterialsUploaded', 'feedbackFormSent'
-    ];
+      const statusFields = [
+      'trainingNeedsFormShared', 'invitationSent', 'trainingTopicShared', 
+      'trainingProfileShared', 'AttendanceDigitized', 'prePostAssessmentUploaded', 
+      'trainingMaterialsUploaded', 'feedbackFormSent'
+      ];
 
-    // 2. Check if all are filled (this determines completion flag)
-    const allFilled = statusFields.every(field => 
-        data[field] !== undefined && data[field] !== null && data[field] !== ''
-    ); 
+      // Check if ALL fields are properly filled
+      const allFilled = statusFields.every(field => {
+          const val = data[field];
+          const reason = data[`${field}Reason`];
 
-    // 3. Set the completion flag
-    data.statusFieldsCompletionFlag = allFilled ? 1 : 0;
+          if (val === 1) return true; // Yes is selected
+          if (val === 0) return (reason && reason.trim() !== ''); // No is selected, check reason
+          return false; // NULL or undefined
+      });
+
+      data.statusFieldsCompletionFlag = allFilled ? 1 : 0;
 
     const { subject, s_type, trainingType, trainingMode, 
         meetingLink,
