@@ -1003,9 +1003,33 @@ exports.create = (req, res) => {
     let data = req.body;
     const user = req.user;
     data.created_by = user.id;
-	console.log(req.body);
+	  console.log(req.body);
 
-    const { subject, s_type, trainingType, trainingMode } = data;
+        // 1. Define the fields
+    const statusFields = [
+        'trainingNeedsFormShared', 'invitationSent', 
+        'trainingTopicShared', 'trainingProfileShared', 
+        'AttendanceDigitized', 'prePostAssessmentUploaded', 
+        'trainingMaterialsUploaded', 'feedbackFormSent'
+    ];
+
+    // 2. Check if all are filled (this determines completion flag)
+    const allFilled = statusFields.every(field => 
+        data[field] !== undefined && data[field] !== null && data[field] !== ''
+    ); 
+
+    // 3. Set the completion flag
+    data.statusFieldsCompletionFlag = allFilled ? 1 : 0;
+
+    const { subject, s_type, trainingType, trainingMode, 
+        meetingLink,
+        taxonomy,    
+        topic        
+    } = data;
+
+    data.meetingLink = meetingLink || null;
+    data.taxonomy = taxonomy || null;
+    data.topic = topic || null;
 
     let checklistRootId = null;
     let checklistStatusFlag = 0; 
