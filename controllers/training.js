@@ -172,13 +172,39 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
     
     qry = `SELECT type, name, detail, t_start, t_end, JSON_UNQUOTE(JSON_EXTRACT(locations, '$[0].link')) location FROM trainings WHERE status = 'Active' AND id = ? `;
     connection.query(qry, [tid], (err, data) => {
-      if (err) 
-        res.status(500).json({ error: err.message });
-      else {
-        const params = {id, tid, tname: data[0].name, typ: data[0].type, detail: data[0].detail, cdate: customDate(data[0].t_start)+' to '+customDate(data[0].t_end), location: data[0].location, uid:user.id};
-        sendTrainermsg(params, (err, results) => { if (err) console.error('Error sending messages:', err.message); else console.log('Messages sent successfully:', results);});
-        res.json({error: false, message: 'Trainer Invite proccesed'});
+      if (err) {
+        // 1. Handle database error (500)
+        return res.status(500).json({ error: err.message });
       }
+
+      // --- 2. Check if the training was found ---
+      if (!data || data.length === 0) {
+        // If no training is found with the given ID and 'Active' status
+        return res.status(404).json({ 
+          error: true, 
+          message: 'Active training not found for the given ID.' 
+        });
+      }
+      
+      //data[0] is guaranteed to exist
+      const training = data[0]; 
+
+      const params = {
+        id, 
+        tid, 
+        tname: training.name, // Access properties on the safe 'training' object
+        typ: training.type, 
+        detail: training.detail, 
+        cdate: customDate(training.t_start) + ' to ' + customDate(training.t_end), 
+        location: training.location, 
+        uid: user.id
+      };
+      
+      console.log('params ', params);
+      sendTrainermsg(params, (err, results) => { if (err) console.error('Error sending messages:', err.message); else console.log('Messages sent successfully:', results);});
+      
+      // Return success response
+      res.json({ error: false, message: 'Trainer Invite processed' });
     });
   }
 
