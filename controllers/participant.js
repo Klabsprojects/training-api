@@ -87,7 +87,14 @@ exports.getfrm = (req, res) => {
     type = 'FeedBack';
   else if(usrfrm.substring(4,5) == '2'){
     type = 'Training Detail';
-    fsql = `SELECT id, type, name, detail, t_start, t_end, school, s_type, subject, sessions, locations, (SELECT group_concat(name) FROM users WHERE Find_in_set(id, trainers)) trainers FROM trainings WHERE id = ?`;
+    fsql = `SELECT id, type, name, detail, t_start, t_end, school, s_type, subject, sessions, locations, topic, 
+        (SELECT group_concat(concat(name, '|', COALESCE(profile_file, ''))) FROM users WHERE Find_in_set(id, trainers)) trainers 
+        FROM trainings WHERE id = ?`;
+
+    //fsql = `SELECT id, type, name, detail, t_start, t_end, school, s_type, subject, sessions, locations, topic, 
+    //(SELECT group_concat(concat(name, '|', COALESCE(profile_file, ''))) FROM users WHERE Find_in_set(id, trainers)) trainers FROM trainings WHERE id = ?`;
+    //(SELECT group_concat(name) FROM users WHERE Find_in_set(id, trainers)) trainers FROM trainings WHERE id = ?`;
+
   }
   else if(usrfrm.substring(4,5) == '3'){
     type = 'Orientation';
@@ -102,7 +109,7 @@ exports.getfrm = (req, res) => {
     fsql = `SELECT id, type, name, detail, t_start, t_end, school, s_type, subject, locations FROM trainings WHERE id = ?`;
   }else if(usrfrm.substring(4,5) == '6'){
     type = 'Account';
-    msql = `SELECT id, type, name, staff_id, mobile, email, district, s_type, subject, acc FROM members WHERE id = ?`;    
+    msql = `SELECT id, type, name, staff_id, mobile, email, district, s_type, subject, acc,  FROM members WHERE id = ?`;    
     fsql = `SELECT id, type, name, detail, t_start, t_end, locations FROM trainings WHERE id = ?`;
   }else if(usrfrm.substring(4,5) == '7'){
     type = 'Certificate';
@@ -134,7 +141,16 @@ exports.getfrm = (req, res) => {
                   res.status(500).json({ error: err.message });
                   return;
                 }
-              res.json({error: false, message: 'Training Data', type, member: mem, training: training});                 
+                if (training.length > 0) {
+                  let data = training[0];
+                  if (data.trainers) {
+                      data.trainers = data.trainers.split(',').map(trainer => {
+                          const [name, profile] = trainer.split('|');
+                          return { name: name || '', profile: profile || '' };
+                      });
+                  }
+                  res.json({error: false, message: 'Training Data', type, member: mem, training: training});
+                }              
               });                          
           }else if (type == 'Materials'){
               connection.query(fsql, [parseInt(usrfrm.substring(5))], (err, training) => {  

@@ -32,4 +32,7 @@ router.get('/checklist/getAssignmentInfo/:id', ct_tra.getAssignmentInfo);
 router.get('/checklist/getAssignedTrainingsByMember/:memberId', ct_tra.getAssignedTrainingsByMember);
 router.put('/checklist/updateAssignmentStatus', ct_tra.updateAssignmentStatus);
 
+router.get('/needForms/:id', ct_tra.getNeedForms);
+router.get('/mandatoryTrainingRequirements/:id', ct_tra.validateTrainingRequirements);
+
 module.exports = router;

@@ -271,7 +271,8 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
           "(SELECT GROUP_CONCAT(" +
             "CAST(id AS CHAR CHARACTER SET utf8mb4), ':', " +
             "CAST(name AS CHAR CHARACTER SET utf8mb4), ':', " +
-            "CAST(mobile AS CHAR CHARACTER SET utf8mb4) " +
+            "CAST(mobile AS CHAR CHARACTER SET utf8mb4), ':', " + 
+            "CAST(IFNULL(profile_file, '') AS CHAR CHARACTER SET utf8mb4) " +
             "SEPARATOR '->') " +
           "FROM users WHERE role = 'Trainer' AND FIND_IN_SET(id, trainings.trainers)) t_data"
         );
@@ -289,6 +290,34 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
           "IF(type = 'ACADEMIC TRAINING' AND t_end < NOW(), TRUE, FALSE) certificate"
       );
 
+      // selectColumns.push(
+        //     "IFNULL((" +
+        //       "SELECT GROUP_CONCAT(" +
+        //         "CAST(u.id AS CHAR CHARACTER SET utf8mb4), ':', " +
+        //         "CAST(u.name AS CHAR CHARACTER SET utf8mb4), ':', " +
+        //         "CAST(u.mobile AS CHAR CHARACTER SET utf8mb4) " +
+        //         "SEPARATOR '->') " +
+        //       "FROM users u " +
+        //       "WHERE u.role = 'Team' " +
+        //       "AND JSON_CONTAINS(COALESCE(" +
+        //             "JSON_EXTRACT(trainings.locations, '$[*].coordinate'), " +
+        //             "'[]'), " +
+        //           "CAST(u.id AS JSON), '$')" +
+        //     "), '') coor_data"
+        // );
+
+        selectColumns.push(
+                    "(SELECT GROUP_CONCAT(" +
+                      "CAST(u.id AS CHAR CHARACTER SET utf8mb4), ':', " +
+                      "CAST(u.name AS CHAR CHARACTER SET utf8mb4), ':', " +
+                      "CAST(u.mobile AS CHAR CHARACTER SET utf8mb4) " +
+                      "SEPARATOR '->') " +
+                    "FROM users u " +
+                    "WHERE u.role = 'Team' " +
+                    "AND trainings.locations LIKE CONCAT('%\"coordinate\":[%', u.id, '%]%')" +
+                    ") coor_data"
+                    );
+
 
     connection.query(`SELECT *, ${selectColumns.join(', ')} FROM trainings WHERE id = ?`, [id], (err, results) => {
       if (err) 
@@ -299,9 +328,12 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
         
         results[0].locations = JSON.parse(results[0].locations);
         results[0].attendance = createSessions(results[0].t_start, results[0].t_end, results[0].att);
+        console.log(results[0].t_data);
         if(results[0].t_data){
           const tmpArray = results[0].t_data.split('->');
-          results[0].t_data = tmpArray.map(trainer => { const [Tid, name, mobile] = trainer.split(':'); return {id: parseInt(Tid), name: name, mobile: mobile};});
+          results[0].t_data = tmpArray.map(trainer => { const [Tid, name, mobile, profile_file] = trainer.split(':'); return {id: parseInt(Tid), name: name, mobile: mobile, profile_file: profile_file || null};});
+          console.log('after process');
+          console.log(results[0].t_data);
         } else 
           results[0].t_data = [];
         if(results[0].a_data){
@@ -315,19 +347,32 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
         } else 
           results[0].mdata = [];
 
+           // coordinators (Team role)
+        // console.log(results[0])
+      if (results[0].coor_data) {
+        const tmpArray = results[0].coor_data.split('->');
+        results[0].coor_data = tmpArray.map(item => {
+          const [id, name, mobile] = item.split(':');
+          return { id: parseInt(id), name, mobile };
+        });
+      } else {
+        results[0].coor_data = [];
+      }
+
         const detailedLocations = results[0].locations.map(location => {
           const { name: location_name, place: location_place, trainer: trainer_id, associate: associate_id, accomdation, accom_link } = location;
           const trainers = (Array.isArray(results[0]?.t_data) && Array.isArray(trainer_id)) ? results[0].t_data.filter(t => trainer_id.includes(t.id)) : [];
           const associates = (Array.isArray(results[0]?.t_data) && Array.isArray(associate_id)) ? results[0].a_data.filter(a => associate_id.includes(a.id)) : [];
           // res.status(500).json({ error: 'Check', trainers });
       
-          const trainerDetails = trainers.map(trainer => ({id: trainer.id, name: trainer.name || null, mobile: trainer.mobile || null}));
+          const trainerDetails = trainers.map(trainer => ({id: trainer.id, name: trainer.name || null, mobile: trainer.mobile || null, profile_file: trainer.profile_file || null}));
           const associateDetails = associates.map(associate => ({id: associate.id, name: associate.name || null, mobile: associate.mobile || null}));
     
           return {location_name,
             location_place,
             trainers: trainerDetails,     
             associates: associateDetails,
+            coordinate: results[0].coor_data ,
             accomdation, accom_link
           };
         });
@@ -403,7 +448,27 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
     if(data.location){
         partColumns.push(`locations = '${JSON.stringify(data.location)}'`);
         delete data.location;
-    }if(data.status){
+    }
+
+    if(data.school){
+        partColumns.push(`school = '${JSON.stringify(data.school)}'`);
+        delete data.school;
+    } 
+       if(data.s_type){
+        partColumns.push(`s_type = '${JSON.stringify(data.s_type)}'`);
+        delete data.s_type;
+    }
+       if(data.subject){
+        partColumns.push(`subject = '${JSON.stringify(data.subject)}'`);
+        delete data.subject;
+    }
+
+    if(data.sessions){
+        partColumns.push(`sessions = '${JSON.stringify(data.sessions)}'`);
+        delete data.sessions;
+    }
+
+    if(data.status){
         partColumns.push(`status = '${data.status}'`);
         delete data.status;
     }
@@ -1855,4 +1920,247 @@ exports.updateAssignmentStatus = async (req, res) => {
             message: `Internal server error: ${error.message}`
         });
     }
+};
+
+exports.getNeedForms = async (req, res) => {
+    const id = req.params.id; // Training ID
+    const user = req.user;    
+
+    // Query filters strictly for 'Need' and 'Pre_Ass'
+    const sql = `
+        SELECT 
+            id, 
+            type, 
+            name, 
+            detail, 
+            (SELECT count(distinct receiver) FROM requests WHERE type = 'Form' AND ref = forms.id) sent, 
+            (SELECT count(distinct created_by) FROM responses WHERE type = 'Feedback' AND ref = forms.id) received 
+        FROM forms 
+        WHERE type IN ('Need', 'Pre_Ass', 'Post_Ass') 
+          AND ref = ?
+    `;
+
+    connection.query(sql, [id], (err, results) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        
+        if (results.length === 0) {
+            return res.status(404).json({ 
+                error: true, 
+                message: 'No Need or Pre-Assessment or Post-Assessment forms found for this training.' 
+            });
+        }
+
+        // Add helper flags for the frontend
+        results.forEach(form => {        
+            form.isNeedAnalysis = form.type === 'Need';
+            form.isPreAssessment = form.type === 'Pre_Ass';
+            form.isPostAssessment = form.type === 'Post_Ass';
+        });
+
+        return res.json({ 
+            error: false, 
+            message: 'Assessment Forms Retrieved', 
+            data: results, 
+            user 
+        }); 
+    }); 
+};
+
+exports.validateTrainingRequirements = async (req, res) => {
+    const trainingId = req.params.id;
+
+    // 1. Added trainingNeedsFormShared to initial fetch
+    const sqlFetch = `
+        SELECT feedbackFormSent, invitationSent, trainingTopicShared, 
+               trainingProfileShared, attendanceDigitized, prePostAssessmentUploaded, 
+               trainingMaterialsUploaded, trainingNeedsFormShared, topic, trainers
+        FROM trainings 
+        WHERE id = ?
+    `;
+
+    connection.query(sqlFetch, [trainingId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (rows.length === 0) return res.status(404).json({ error: true, message: 'Training not found' });
+
+        const training = rows[0];
+        const trainerIds = training.trainers ? training.trainers.split(',') : [];
+
+        // 2. SQL Definitions
+        const sqlProfiles = `SELECT id, profile_file FROM users WHERE id IN (?)`;
+        const sqlRequests = `SELECT type, ref FROM requests WHERE (ref = ? AND type IN ('Form', 'Train-Par')) OR (type = 'Form')`;
+        const sqlRSVP = `SELECT id FROM responses WHERE ref = ? AND type = 'rsvp' LIMIT 1`;
+        const sqlAttendance = `SELECT response FROM responses WHERE ref = ? AND type = 'Attendance' ORDER BY id DESC LIMIT 1`;
+        const sqlPreAsst = `SELECT response FROM responses WHERE ref = ? AND type = 'Pre-Asst' ORDER BY id DESC LIMIT 1`;
+        const sqlPostAsst = `SELECT response FROM responses WHERE ref = ? AND type = 'Post-Asst' ORDER BY id DESC LIMIT 1`;
+        const sqlMaterials = `SELECT id FROM responses WHERE ref = ? AND type = 'Materials' LIMIT 1`;
+        // Query to get associated forms
+        const sqlForms = `SELECT id FROM forms WHERE ref = ? AND type IN ('Need', 'Pre_Ass', 'Post_Ass')`;
+
+        const sqlFeedbackForms = `SELECT id FROM forms WHERE ref = ? AND type IN ('Training', 'Training-T', 'Training-O')`;
+
+        connection.query(sqlFeedbackForms, [trainingId], (reqErr, reqRows) => {
+            if (reqErr) return res.status(500).json({ error: reqErr.message });
+
+            connection.query(sqlRSVP, [trainingId], (respErr, respRows) => {
+                if (respErr) return res.status(500).json({ error: respErr.message });
+
+                connection.query(sqlAttendance, [trainingId], (attErr, attRows) => {
+                    if (attErr) return res.status(500).json({ error: attErr.message });
+
+                    connection.query(sqlPreAsst, [trainingId], (preErr, preRows) => {
+                        if (preErr) return res.status(500).json({ error: preErr.message });
+
+                        connection.query(sqlPostAsst, [trainingId], (postErr, postRows) => {
+                            if (postErr) return res.status(500).json({ error: postErr.message });
+
+                            connection.query(sqlMaterials, [trainingId], (matErr, matRows) => {
+                                if (matErr) return res.status(500).json({ error: matErr.message });
+
+                                // 3. New Query: Fetch associated forms
+                                connection.query(sqlForms, [trainingId], (formErr, formRows) => {
+                                    if (formErr) return res.status(500).json({ error: formErr.message });
+
+                                    const trainerCheckQuery = trainerIds.length > 0 ? sqlProfiles : "SELECT 1 as dummy";
+                                    const trainerQueryParams = trainerIds.length > 0 ? [trainerIds] : [];
+
+                                    connection.query(trainerCheckQuery, trainerQueryParams, (userErr, userRows) => {
+                                        if (userErr) return res.status(500).json({ error: userErr.message });
+
+                                        // Logic Setup
+                                        const requestRefIds = new Set(reqRows.filter(r => r.type === 'Form').map(r => String(r.ref)));
+                                        const existingRequestTypes = new Set(reqRows.map(r => r.type));
+                                        const hasRSVP = respRows.length > 0;
+                                        const invitationActuallySent = existingRequestTypes.has('Train-Par');
+
+                                        let feedbackMsg = "Requirement satisfied";
+                                        let invitationMsg = "Requirement satisfied";
+                                        let topicMsg = "Requirement satisfied";
+                                        let profileMsg = "Requirement satisfied";
+                                        let attendanceMsg = "Requirement satisfied";
+                                        let scoreMsg = "Requirement satisfied";
+                                        let materialsMsg = "Requirement satisfied";
+                                        let needsFormMsg = "Requirement satisfied";
+
+                                        // --- 1. Feedback Logic ---
+                                        // const feedbackSatisfied = training.feedbackFormSent === 1 ? existingRequestTypes.has('Form') : true;
+                                        // if (training.feedbackFormSent === 1 && !feedbackSatisfied) feedbackMsg = "Mandatory 'Form' request missing";
+
+                                        // --- 2. Invitation Logic ---
+                                        const invitationSatisfied = training.invitationSent === 1 ? (invitationActuallySent && hasRSVP) : true;
+                                        if (training.invitationSent === 1) {
+                                            if (!invitationActuallySent) invitationMsg = "Mandatory 'Train-Par' request missing";
+                                            else if (!hasRSVP) invitationMsg = "Invitation sent but no RSVP response found";
+                                        }
+
+                                        // --- 3. Topic Shared Logic ---
+                                        const topicFieldHasData = training.topic !== null && training.topic.trim() !== '';
+                                        const topicSatisfied = training.trainingTopicShared === 1 ? (topicFieldHasData && invitationActuallySent) : true;
+                                        if (training.trainingTopicShared === 1 && !topicSatisfied) {
+                                            topicMsg = !topicFieldHasData ? "Topic field is empty" : "Topic sharing requires Invitation record";
+                                        }
+
+                                        // --- 4. Profile Shared Logic ---
+                                        let missingProfiles = [];
+                                        if (training.trainingProfileShared === 1) {
+                                            trainerIds.forEach(tid => {
+                                                const userRecord = userRows.find(u => u.id == tid);
+                                                if (!userRecord || !userRecord.profile_file || userRecord.profile_file.trim() === '') missingProfiles.push(tid);
+                                            });
+                                        }
+                                        const profileSatisfied = training.trainingProfileShared === 1 ? (missingProfiles.length === 0 && invitationActuallySent) : true;
+                                        if (training.trainingProfileShared === 1 && !profileSatisfied) {
+                                            profileMsg = missingProfiles.length > 0 ? `Profile files missing for IDs: ${missingProfiles.join(', ')}` : "Profile sharing requires Invitation record";
+                                        }
+
+                                        // --- 5. Attendance Logic ---
+                                        let attendanceSatisfied = true;
+                                        if (training.attendanceDigitized === 1) {
+                                            if (attRows.length === 0) {
+                                                attendanceSatisfied = false; attendanceMsg = "No attendance record found";
+                                            } else {
+                                                try {
+                                                    const attData = typeof attRows[0].response === 'string' ? JSON.parse(attRows[0].response) : attRows[0].response;
+                                                    if (!attData.participants || attData.participants.trim() === "") {
+                                                        attendanceSatisfied = false; attendanceMsg = "Participant list is empty";
+                                                    }
+                                                } catch (e) { attendanceSatisfied = false; attendanceMsg = "JSON error"; }
+                                            }
+                                        }
+
+                                        // --- 6. Score Logic ---
+                                        let scoreSatisfied = true;
+                                        if (training.prePostAssessmentUploaded === 1) {
+                                            const valAsst = (r, l) => {
+                                                if (r.length === 0) return { ok: false, msg: `Missing ${l}` };
+                                                const d = typeof r[0].response === 'string' ? JSON.parse(r[0].response) : r[0].response;
+                                                return (Array.isArray(d.score) && d.score.length > 0) ? { ok: true } : { ok: false, msg: `${l} score empty` };
+                                            };
+                                            const preC = valAsst(preRows, "Pre-Asst");
+                                            const postC = valAsst(postRows, "Post-Asst");
+                                            if (!preC.ok || !postC.ok) { scoreSatisfied = false; scoreMsg = preC.ok ? postC.msg : preC.msg; }
+                                        }
+
+                                        // --- 7. Materials Logic ---
+                                        const materialsSatisfied = training.trainingMaterialsUploaded === 1 ? matRows.length > 0 : true;
+                                        if (training.trainingMaterialsUploaded === 1 && !materialsSatisfied) materialsMsg = "No materials found";
+
+                                        // --- 8. Training Needs Form Shared Logic ---
+                                        let needsFormSatisfied = true;
+                                        if (training.trainingNeedsFormShared === 1) {
+                                            if (formRows.length === 0) {
+                                                needsFormSatisfied = false;
+                                                needsFormMsg = "No forms (Need/Pre_Ass/Post_Ass) created for this training";
+                                            } else {
+                                                const unsentFormIds = formRows.filter(f => !requestRefIds.has(String(f.id))).map(f => f.id);
+                                                if (unsentFormIds.length > 0) {
+                                                    needsFormSatisfied = false;
+                                                    needsFormMsg = `Forms not shared (missing request record) for Form IDs: ${unsentFormIds.join(', ')}`;
+                                                }
+                                            }
+                                        }
+
+                                        // --- 8. Training Needs Form Shared Logic ---
+                                        let feedbackSatisfied = true;
+                                        if (training.trainingNeedsFormShared === 1) {
+                                            if (reqRows.length === 0) {
+                                                feedbackSatisfied = false;
+                                                feedbackMsg = "No forms (teacher/trainer/observer/) created for this training";
+                                            } else {
+                                                const unsentFormIds = reqRows.filter(f => !requestRefIds.has(String(f.id))).map(f => f.id);
+                                                if (unsentFormIds.length > 0) {
+                                                    feedbackSatisfied = false;
+                                                    feedbackMsg = `Forms not shared (missing request record) for Form IDs: ${unsentFormIds.join(', ')}`;
+                                                }
+                                            }
+                                        }
+
+                                        // --- FINAL RESPONSE ---
+                                        return res.json({
+                                            error: false,
+                                            trainingId: trainingId,
+                                            flags: {
+                                                feedbackFormSent: { value: training.feedbackFormSent, satisfied: feedbackSatisfied, message: feedbackMsg },
+                                                invitationSent: { value: training.invitationSent, satisfied: invitationSatisfied, message: invitationMsg },
+                                                trainingTopicShared: { value: training.trainingTopicShared, satisfied: topicSatisfied, message: topicMsg },
+                                                trainingProfileShared: { value: training.trainingProfileShared, satisfied: profileSatisfied, message: profileMsg },
+                                                attendanceDigitized: { value: training.attendanceDigitized, satisfied: attendanceSatisfied, message: attendanceMsg },
+                                                prePostAssessmentUploaded: { value: training.prePostAssessmentUploaded, satisfied: scoreSatisfied, message: scoreMsg },
+                                                trainingMaterialsUploaded: { value: training.trainingMaterialsUploaded, satisfied: materialsSatisfied, message: materialsMsg },
+                                                trainingNeedsFormShared: { value: training.trainingNeedsFormShared, satisfied: needsFormSatisfied, message: needsFormMsg }
+                                            },
+                                            allRequirementsMet: feedbackSatisfied && invitationSatisfied && topicSatisfied && 
+                                                               profileSatisfied && attendanceSatisfied && scoreSatisfied && 
+                                                               materialsSatisfied && needsFormSatisfied
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
 };
