@@ -445,10 +445,22 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
         partColumns.push(`detail = '${data.detail}'`);
         delete data.detail;
     }
-    if(data.location){
-        partColumns.push(`locations = '${JSON.stringify(data.location)}'`);
-        delete data.location;
-    }
+    // if(data.location){
+    //     partColumns.push(`locations = '${JSON.stringify(data.location)}'`);
+    //     delete data.location;
+    // }
+
+if(data.location){
+    // Store the JSON value to be added as a parameter later
+    const locationValue = JSON.stringify(data.location);
+    partColumns.push(`locations = ?`);
+    
+    // Store this value separately to add to query params
+    if (!data._paramValues) data._paramValues = [];
+    data._paramValues.push(locationValue);
+    
+    delete data.location;
+}
 
     if(data.school){
         partColumns.push(`school = '${JSON.stringify(data.school)}'`);
@@ -477,6 +489,13 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
     if(data.topic_covered)
         partColumns.push(`topic_covered = '${data.topic_covered}'`);
 
+    if(data.associate){
+        partColumns.push(`associates = '${data.associate}'`);
+    } 
+    if(data.trainer){ 
+        partColumns.push(`trainers = '${data.trainer}'`);
+    }
+
     // --- 4. Handle Completion Flag Logic ---
     // Since we don't know the state of the other fields in the DB, we fetch the row first
     connection.query('SELECT * FROM trainings WHERE id = ?', [id], (fetchErr, rows) => {
@@ -492,9 +511,10 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
 
       partColumns.push(`statusFieldsCompletionFlag = ${allFilled ? 1 : 0}`);
             
-      let uQry = `UPDATE trainings SET ${partColumns.length ? partColumns.join(', ') : ''} WHERE id = ?`;        
+      let uQry = `UPDATE trainings SET ${partColumns.length ? partColumns.join(', ') : ''} WHERE id = ?`;      
+      const queryParams = data._paramValues ? [...data._paramValues, id] : [id];  
       // console.log(uQry);
-      connection.query(uQry, [id], (err) => {
+      connection.query(uQry, queryParams, (err) => {
       if (err) 
           res.status(500).json({ error: err.message, uQry, data});
       else 
