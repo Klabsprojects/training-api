@@ -13,6 +13,7 @@ const rt_naut = require('./routes/noauth');
 const rt_res = require('./routes/response');
 const rt_tra = require('./routes/training');
 const rt_upload = require('./routes/upload');
+const rt_grp = require('./routes/group');
 
 const port = process.env.PORT || 3005;
 const app = express();
@@ -50,6 +51,7 @@ app.use('/training', verifyToken, rt_tra);
 app.use('/login', rt_naut);
 app.use('/mem', rt_naut);
 app.use('/upload', rt_upload);
+app.use('/group', verifyToken, rt_grp);
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);

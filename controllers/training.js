@@ -1988,7 +1988,7 @@ exports.getNeedForms = async (req, res) => {
     }); 
 };
 
-exports.validateTrainingRequirements = async (req, res) => {
+exports.validateTrainingRequirementsold = async (req, res) => {
     const trainingId = req.params.id;
 
     // 1. Added trainingNeedsFormShared to initial fetch
@@ -2184,3 +2184,310 @@ exports.validateTrainingRequirements = async (req, res) => {
         });
     });
 };
+
+exports.validateTrainingRequirements = async (req, res) => {
+  
+    const trainingId = req.params.id;
+
+    // 1. Added trainingNeedsFormShared to initial fetch
+    const sqlFetch = `
+        SELECT feedbackFormSent, invitationSent, trainingTopicShared, 
+               trainingProfileShared, attendanceDigitized, prePostAssessmentUploaded, 
+               trainingMaterialsUploaded, trainingNeedsFormShared, topic, trainers
+        FROM trainings 
+        WHERE id = ?
+    `;
+
+    connection.query(sqlFetch, [trainingId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (rows.length === 0) return res.status(404).json({ error: true, message: 'Training not found' });
+
+        const training = rows[0];
+        const trainerIds = training.trainers ? training.trainers.split(',') : [];
+
+        // 2. SQL Definitions
+        const sqlProfiles = `SELECT id, profile_file FROM users WHERE id IN (?)`;
+        const sqlRequests = `SELECT type, ref FROM requests WHERE ref = ? AND AND type = 'Form'`;
+        const sqlRSVP = `SELECT id FROM responses WHERE ref = ? AND type = 'rsvp' LIMIT 1`;
+        const sqlAttendance = `SELECT response FROM responses WHERE ref = ? AND type = 'Attendance' ORDER BY id DESC LIMIT 1`;
+        const sqlPreAsst = `SELECT response FROM responses WHERE ref = ? AND type = 'Pre-Asst' ORDER BY id DESC LIMIT 1`;
+        const sqlPostAsst = `SELECT response FROM responses WHERE ref = ? AND type = 'Post-Asst' ORDER BY id DESC LIMIT 1`;
+        const sqlMaterials = `SELECT id FROM responses WHERE ref = ? AND type = 'Materials' LIMIT 1`;
+        // Query to get associated forms
+        const sqlForms = `SELECT id FROM forms WHERE ref = ? AND type IN ('Need', 'Pre_Ass', 'Post_Ass')`;
+
+        const sqlFeedbackForms = `SELECT id FROM forms WHERE ref = ? AND type IN ('Training', 'Training-T', 'Training-O')`;
+        //const sqlReqs = `SELECT type, ref FROM requests WHERE (ref = ? AND type = 'Form')`;
+        
+
+        connection.query(sqlFeedbackForms, [trainingId], (reqErr, reqRows) => {
+            if (reqErr) return res.status(500).json({ error: reqErr.message });
+
+            connection.query(sqlRSVP, [trainingId], (respErr, respRows) => {
+                if (respErr) return res.status(500).json({ error: respErr.message });
+
+                connection.query(sqlAttendance, [trainingId], (attErr, attRows) => {
+                    if (attErr) return res.status(500).json({ error: attErr.message });
+
+                    connection.query(sqlPreAsst, [trainingId], (preErr, preRows) => {
+                        if (preErr) return res.status(500).json({ error: preErr.message });
+
+                        connection.query(sqlPostAsst, [trainingId], (postErr, postRows) => {
+                            if (postErr) return res.status(500).json({ error: postErr.message });
+
+                            connection.query(sqlMaterials, [trainingId], (matErr, matRows) => {
+                                if (matErr) return res.status(500).json({ error: matErr.message });
+
+                                // 3. New Query: Fetch associated forms
+                                connection.query(sqlForms, [trainingId], (formErr, formRows) => {
+                                    if (formErr) return res.status(500).json({ error: formErr.message });
+
+                                    const trainerCheckQuery = trainerIds.length > 0 ? sqlProfiles : "SELECT 1 as dummy";
+                                    const trainerQueryParams = trainerIds.length > 0 ? [trainerIds] : [];
+
+                                    connection.query(trainerCheckQuery, trainerQueryParams, (userErr, userRows) => {
+                                        if (userErr) return res.status(500).json({ error: userErr.message });
+
+                                        // Logic Setup
+                                        const requestRefIds = new Set(reqRows.filter(r => r.type === 'Form').map(r => String(r.ref)));
+                                        const existingRequestTypes = new Set(reqRows.map(r => r.type));
+                                        const hasRSVP = respRows.length > 0;
+                                        const invitationActuallySent = existingRequestTypes.has('Train-Par');
+
+                                        let feedbackMsg = "Requirement satisfied";
+                                        let invitationMsg = "Requirement satisfied";
+                                        let topicMsg = "Requirement satisfied";
+                                        let profileMsg = "Requirement satisfied";
+                                        let attendanceMsg = "Requirement satisfied";
+                                        let scoreMsg = "Requirement satisfied";
+                                        let materialsMsg = "Requirement satisfied";
+                                        let needsFormMsg = "Requirement satisfied";
+
+                                        // --- 1. Feedback Logic ---
+                                        // const feedbackSatisfied = training.feedbackFormSent === 1 ? existingRequestTypes.has('Form') : true;
+                                        // if (training.feedbackFormSent === 1 && !feedbackSatisfied) feedbackMsg = "Mandatory 'Form' request missing";
+
+                                        // --- 2. Invitation Logic ---
+                                        const invitationSatisfied = training.invitationSent === 1 ? (invitationActuallySent && hasRSVP) : true;
+                                        if (training.invitationSent === 1) {
+                                            if (!invitationActuallySent) invitationMsg = "Mandatory 'Train-Par' request missing";
+                                            else if (!hasRSVP) invitationMsg = "Invitation sent but no RSVP response found";
+                                        }
+
+                                        // --- 3. Topic Shared Logic ---
+                                        const topicFieldHasData = training.topic !== null && training.topic.trim() !== '';
+                                        const topicSatisfied = training.trainingTopicShared === 1 ? (topicFieldHasData && invitationActuallySent) : true;
+                                        if (training.trainingTopicShared === 1 && !topicSatisfied) {
+                                            topicMsg = !topicFieldHasData ? "Topic field is empty" : "Topic sharing requires Invitation record";
+                                        }
+
+                                        // --- 4. Profile Shared Logic ---
+                                        let missingProfiles = [];
+                                        if (training.trainingProfileShared === 1) {
+                                            trainerIds.forEach(tid => {
+                                                const userRecord = userRows.find(u => u.id == tid);
+                                                if (!userRecord || !userRecord.profile_file || userRecord.profile_file.trim() === '') missingProfiles.push(tid);
+                                            });
+                                        }
+                                        const profileSatisfied = training.trainingProfileShared === 1 ? (missingProfiles.length === 0 && invitationActuallySent) : true;
+                                        if (training.trainingProfileShared === 1 && !profileSatisfied) {
+                                            profileMsg = missingProfiles.length > 0 ? `Profile files missing for IDs: ${missingProfiles.join(', ')}` : "Profile sharing requires Invitation record";
+                                        }
+
+                                        // --- 5. Attendance Logic ---
+                                        let attendanceSatisfied = true;
+                                        if (training.attendanceDigitized === 1) {
+                                            if (attRows.length === 0) {
+                                                attendanceSatisfied = false; attendanceMsg = "No attendance record found";
+                                            } else {
+                                                try {
+                                                    const attData = typeof attRows[0].response === 'string' ? JSON.parse(attRows[0].response) : attRows[0].response;
+                                                    if (!attData.participants || attData.participants.trim() === "") {
+                                                        attendanceSatisfied = false; attendanceMsg = "Participant list is empty";
+                                                    }
+                                                } catch (e) { attendanceSatisfied = false; attendanceMsg = "JSON error"; }
+                                            }
+                                        }
+
+                                        // --- 6. Score Logic ---
+                                        let scoreSatisfied = true;
+                                        if (training.prePostAssessmentUploaded === 1) {
+                                            const valAsst = (r, l) => {
+                                                if (r.length === 0) return { ok: false, msg: `Missing ${l}` };
+                                                const d = typeof r[0].response === 'string' ? JSON.parse(r[0].response) : r[0].response;
+                                                return (Array.isArray(d.score) && d.score.length > 0) ? { ok: true } : { ok: false, msg: `${l} score empty` };
+                                            };
+                                            const preC = valAsst(preRows, "Pre-Asst");
+                                            const postC = valAsst(postRows, "Post-Asst");
+                                            if (!preC.ok || !postC.ok) { scoreSatisfied = false; scoreMsg = preC.ok ? postC.msg : preC.msg; }
+                                        }
+
+                                        // --- 7. Materials Logic ---
+                                        const materialsSatisfied = training.trainingMaterialsUploaded === 1 ? matRows.length > 0 : true;
+                                        if (training.trainingMaterialsUploaded === 1 && !materialsSatisfied) materialsMsg = "No materials found";
+
+                                        // --- 8. Training Needs Form Shared Logic ---
+                                        let needsFormSatisfied = true;
+                                        if (training.trainingNeedsFormShared === 1) {
+                                            if (formRows.length === 0) {
+                                                needsFormSatisfied = false;
+                                                needsFormMsg = "No forms (Need/Pre_Ass/Post_Ass) created for this training";
+                                            } else {
+                                                const unsentFormIds = formRows.filter(f => !requestRefIds.has(String(f.id))).map(f => f.id);
+                                                if (unsentFormIds.length > 0) {
+                                                    needsFormSatisfied = false;
+                                                    needsFormMsg = `Forms not shared (missing request record) for Form IDs: ${unsentFormIds.join(', ')}`;
+                                                }
+                                            }
+                                        }
+
+                                        // --- 8. Feedback  Form Shared Logic ---
+                                       // --- 8. Feedback Form Shared Logic ---
+                                      let feedbackSatisfied = true;
+
+                                      if (training.feedbackFormSent === 1) {
+                                        const requiredTypes = ['Training', 'Training-T', 'Training-O'];
+                                        const foundTypes = reqRows.map(f => f.type);
+                                        const missingTypes = requiredTypes.filter(t => !foundTypes.includes(t));
+
+                                        if (reqRows.length < 3) {
+                                            feedbackSatisfied = false;
+                                            feedbackMsg = `Missing form types: ${missingTypes.join(', ')}`;
+                                        
+                                            const allRequirementsMet = feedbackSatisfied && invitationSatisfied && topicSatisfied && 
+                                                               profileSatisfied && attendanceSatisfied && scoreSatisfied && 
+                                                               materialsSatisfied && needsFormSatisfied;
+                                            const computedStatus = allRequirementsMet ? 'completed' : 'pending';
+                                            // Return response immediately since we already failed the "3 rows" requirement
+                                            return res.json({
+                                                error: false,
+                                                trainingId: trainingId,
+                                                computedCompletionStatus: computedStatus, 
+                                                allRequirementsMet: feedbackSatisfied && invitationSatisfied && topicSatisfied && 
+                                                               profileSatisfied && attendanceSatisfied && scoreSatisfied && 
+                                                               materialsSatisfied && needsFormSatisfied,
+                                                flags: {
+                                                    feedbackFormSent: { value: training.feedbackFormSent, satisfied: feedbackSatisfied, message: feedbackMsg },
+                                                    invitationSent: { value: training.invitationSent, satisfied: invitationSatisfied, message: invitationMsg },
+                                                    trainingTopicShared: { value: training.trainingTopicShared, satisfied: topicSatisfied, message: topicMsg },
+                                                    trainingProfileShared: { value: training.trainingProfileShared, satisfied: profileSatisfied, message: profileMsg },
+                                                    attendanceDigitized: { value: training.attendanceDigitized, satisfied: attendanceSatisfied, message: attendanceMsg },
+                                                    prePostAssessmentUploaded: { value: training.prePostAssessmentUploaded, satisfied: scoreSatisfied, message: scoreMsg },
+                                                    trainingMaterialsUploaded: { value: training.trainingMaterialsUploaded, satisfied: materialsSatisfied, message: materialsMsg },
+                                                    trainingNeedsFormShared: { value: training.trainingNeedsFormShared, satisfied: needsFormSatisfied, message: needsFormMsg }
+                                                },
+                                                //allRequirementsMet: false // Automatically false because feedback failed
+                                            });
+                                        } else {
+                                            // All 3 rows exist, now check if all 3 are shared (exist in requests table)
+                                            const formIdsFound = reqRows.map(f => f.id);
+                                            const sqlCheckRequests = `SELECT ref FROM requests WHERE type = 'Form' AND ref IN (?)`;
+
+                                            connection.query(sqlCheckRequests, [formIdsFound], (reqCheckErr, sentRows) => {
+                                                if (reqCheckErr) return res.status(500).json({ error: reqCheckErr.message });
+
+                                                const sentFormIds = new Set(sentRows.map(r => String(r.ref)));
+                                                
+                                                // Find which specific forms (by ID) are missing from the requests table
+                                                const unsentForms = reqRows.filter(f => !sentFormIds.has(String(f.id)));
+
+                                                if (unsentForms.length > 0) {
+                                                    feedbackSatisfied = false;
+                                                    const unsentTypes = unsentForms.map(f => f.type);
+                                                    feedbackMsg = `Forms created but not shared for types: ${unsentTypes.join(', ')}`;
+                                                }
+
+                                                const allRequirementsMet = feedbackSatisfied && invitationSatisfied && topicSatisfied && 
+                                                               profileSatisfied && attendanceSatisfied && scoreSatisfied && 
+                                                               materialsSatisfied && needsFormSatisfied;
+                                                const computedStatus = allRequirementsMet ? 'completed' : 'pending';
+
+                                                return res.json({
+                                                    error: false,
+                                                    trainingId: trainingId,
+                                                    computedCompletionStatus: computedStatus, 
+                                                    allRequirementsMet: allRequirementsMet,
+                                                    flags: {
+                                                        feedbackFormSent: { value: training.feedbackFormSent, satisfied: feedbackSatisfied, message: feedbackMsg },
+                                                        invitationSent: { value: training.invitationSent, satisfied: invitationSatisfied, message: invitationMsg },
+                                                        trainingTopicShared: { value: training.trainingTopicShared, satisfied: topicSatisfied, message: topicMsg },
+                                                        trainingProfileShared: { value: training.trainingProfileShared, satisfied: profileSatisfied, message: profileMsg },
+                                                        attendanceDigitized: { value: training.attendanceDigitized, satisfied: attendanceSatisfied, message: attendanceMsg },
+                                                        prePostAssessmentUploaded: { value: training.prePostAssessmentUploaded, satisfied: scoreSatisfied, message: scoreMsg },
+                                                        trainingMaterialsUploaded: { value: training.trainingMaterialsUploaded, satisfied: materialsSatisfied, message: materialsMsg },
+                                                        trainingNeedsFormShared: { value: training.trainingNeedsFormShared, satisfied: needsFormSatisfied, message: needsFormMsg }
+                                                    }
+                                                });
+                                            });
+                                            return; 
+                                        }
+                                    }
+
+                                    const allRequirementsMet = feedbackSatisfied && invitationSatisfied && topicSatisfied && 
+                                                               profileSatisfied && attendanceSatisfied && scoreSatisfied && 
+                                                               materialsSatisfied && needsFormSatisfied;
+                                    const computedStatus = allRequirementsMet ? 'completed' : 'pending';
+                                      
+                                      // --- FINAL RESPONSE ---
+                                        return res.json({
+                                            error: false,
+                                            trainingId: trainingId,
+                                            computedCompletionStatus: computedStatus, 
+                                            allRequirementsMet: allRequirementsMet,
+                                            flags: {
+                                                feedbackFormSent: { value: training.feedbackFormSent, satisfied: feedbackSatisfied, message: feedbackMsg },
+                                                invitationSent: { value: training.invitationSent, satisfied: invitationSatisfied, message: invitationMsg },
+                                                trainingTopicShared: { value: training.trainingTopicShared, satisfied: topicSatisfied, message: topicMsg },
+                                                trainingProfileShared: { value: training.trainingProfileShared, satisfied: profileSatisfied, message: profileMsg },
+                                                attendanceDigitized: { value: training.attendanceDigitized, satisfied: attendanceSatisfied, message: attendanceMsg },
+                                                prePostAssessmentUploaded: { value: training.prePostAssessmentUploaded, satisfied: scoreSatisfied, message: scoreMsg },
+                                                trainingMaterialsUploaded: { value: training.trainingMaterialsUploaded, satisfied: materialsSatisfied, message: materialsMsg },
+                                                trainingNeedsFormShared: { value: training.trainingNeedsFormShared, satisfied: needsFormSatisfied, message: needsFormMsg }
+                                            }
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+};
+
+const updateTrainingStatusToCompleted = (trainingId, callback) => {
+    const updateQuery = `
+        UPDATE trainings 
+        SET completion_status = 'completed', 
+            updated_at = NOW() 
+        WHERE id = ?
+    `;
+    
+    connection.query(updateQuery, [trainingId], (err, result) => {
+        if (err) {
+            console.error('Training status update failed:', err);
+            return callback({ 
+                error: true, 
+                message: 'Failed to update training status',
+                details: err.message 
+            });
+        }
+        
+        if (result.affectedRows === 0) {
+            return callback({ 
+                error: true, 
+                message: 'Training not found' 
+            });
+        }
+        
+        callback({ 
+            error: false, 
+            message: 'Training status updated to completed',
+            trainingId: trainingId,
+            affectedRows: result.affectedRows
+        });
+    });
+};
+
+module.exports.updateTrainingStatusToCompleted = updateTrainingStatusToCompleted;
