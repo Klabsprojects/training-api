@@ -1,22 +1,6 @@
 const connection = require('../db');
 const {encrypt} = require('../helpers/helper');
 const {sendWHBatch} =require('../helpers/curls');
-const ct_tra = require('../controllers/training');
-
-//wrapper function
-const callValidateTrainingRequirements = (trainingId, req, callback) => {
-    const mockReq = { params: { id: trainingId } };
-    const mockRes = {
-        status: () => mockRes,  // Chainable mock
-        json: (data) => {
-            // ✅ SILENT - Capture data, DON'T call real res.json()
-            callback(data);
-        }
-    };
-    
-    // Call original function - it will use our silent mockRes
-    ct_tra.validateTrainingRequirements(mockReq, mockRes);
-};
 
   exports.list = (req, res) => {
     const user = req.user;
@@ -61,71 +45,62 @@ const callValidateTrainingRequirements = (trainingId, req, callback) => {
   };
 
   exports.update = (req, res) => {  
-    console.log(req.header);
+
     const id = req.params.id;
+
     const data = req.body;
+
     const user = req.user;
+
     let partColumns = [];
+
     if(data.add_participants){
+
         partColumns.push("participants = CASE WHEN participants IS NULL OR participants = '' THEN '"+data.add_participants+"' ELSE CONCAT(participants, ',', '"+data.add_participants+"') END");
+
         const params = {type:'Form', ids:data.add_participants, fid:id, uid:user.id};
+
         delete data.add_participants;
+
         sendWHBatch(params);       
+
     }
+
     if(data.add_quests){
+
         partColumns.push("quests = CASE WHEN quests IS NULL OR quests = '' THEN '"+data.add_quests+"' ELSE CONCAT(quests, ',', '"+data.add_quests+"') END");
+
         delete data.add_quests;
+
     }
+
     let uQry = `UPDATE forms SET ${partColumns.length ? partColumns.join(', ') : ''} WHERE id = ?`;
+
     let Qry = [id];
+
     if(data.type){
+
       uQry = `UPDATE forms SET ${partColumns.length ? partColumns.join(', ')+',' : ''} ? WHERE id = ?`;
+
       Qry = [data, id];
+
     }
+
     // res.status(500).json({ error: false, uQry, len:data});
+
     connection.query(uQry, Qry, (err) => {
+
     if (err) 
+
         res.status(500).json({ error: err.message, uQry});
-     else {
-            // Send IMMEDIATE response - ONLY form update info
-            res.json({ 
-                error: false, 
-                message: 'Form Updated', 
-                user 
-            });
-            
-            // BACKGROUND PROCESS - Silent, no response impact
-            connection.query('SELECT ref FROM forms WHERE id = ?', [id], (selectErr, selectResults) => {
-                if (selectErr) {
-                    console.error('Background ref fetch failed:', selectErr);
-                    return;
-                }
-                
-                const ref = selectResults.length > 0 ? selectResults[0].ref : null;
-                console.log('Background check - Fetched ref:', ref);
-                
-                // Background validation check
-                callValidateTrainingRequirements(ref, req, (validationResult) => {
-                    if (validationResult.error === false && 
-                        validationResult.computedCompletionStatus === 'completed') {
-                        
-                        console.log('Background: Training status is completed');
-                        // Background status update - SILENT
-                        ct_tra.updateTrainingStatusToCompleted(validationResult.trainingId, (statusResult) => {
-                            if (statusResult.error === false) {
-                                console.log('Background: Training completed updated successfully');
-                            } else {
-                                console.error('Background: Training status update failed:', statusResult);
-                            }
-                        });
-                    } else {
-                        console.log('Background: Training still pending');
-                    }
-                });
-            });
-        }
+
+    else 
+
+        res.json({error: false, message: 'Form Updated', user});
+
     });
-};
+
+  };
 
   exports.getparts = (req, res) => {
     const id = req.params.id;
