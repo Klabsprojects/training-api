@@ -58,8 +58,14 @@ function normalizeJsonField(rawValue, mapper = (x) => x) {
       whereClauses = ["CURDATE() BETWEEN t_start AND t_end"];
       orderColumns = ["t_start"];
     }
-    if (status && status == 'Completed')
-      whereClauses = ["t_end < CURDATE()"];
+    // if (status && status == 'Completed')
+    //   whereClauses = ["t_end < CURDATE()"];
+    if (status && status === 'Completed') {
+    whereClauses = ["completion_status = 'completed'"];
+    }
+    if (status && status === 'Pending') {
+    whereClauses = ["completion_status = 'pending'"];
+    }
     if (type)
       whereClauses = ["type = '"+type+"'"];
     if (user['role'] == 'Trainer') 
