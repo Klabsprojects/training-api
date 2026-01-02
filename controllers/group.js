@@ -305,6 +305,8 @@ exports.getMembersWithoutGroup = (req, res) => {
       LEFT JOIN \`group_members\` gm ON m.id = gm.member_id
       WHERE gm.member_id IS NULL
       AND m.status = 'Active'
+      AND m.type = "teacher"
+      AND m.subject != "headmaster"
       ORDER BY m.name ASC
     `;
 
