@@ -502,6 +502,10 @@ if(data.location){
     if(data.trainer){ 
         partColumns.push(`trainers = '${data.trainer}'`);
     }
+     if(data.group_ids){ 
+        partColumns.push(`group_ids = '${JSON.stringify(data.group_ids)}'`);
+    }
+
 
     // --- 4. Handle Completion Flag Logic ---
     // Since we don't know the state of the other fields in the DB, we fetch the row first
@@ -1187,6 +1191,8 @@ exports.create = (req, res) => {
       data.s_type = JSON.stringify(data.s_type);
     if (data.subject) 
       data.subject = JSON.stringify(data.subject);
+     if (data.group_ids) 
+      data.group_ids = JSON.stringify(data.group_ids);
 
     if (data.locations) {
       let trainers = [];

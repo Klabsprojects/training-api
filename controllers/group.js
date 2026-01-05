@@ -141,6 +141,66 @@ exports.getAllGroupsWithMembers = (req, res) => {
   });
 };
 
+exports.getGroupsWithMembers_byId = (req, res) => {
+  pool.getConnection((err, connection) => {
+    if (err) {
+      return res.status(500).json({ success: false, error: 'Database connection failed' });
+    }
+
+    const id = req.params.id;
+
+    // Query to get all groups with their members
+    const groupsSql = `
+      SELECT 
+        g.id,
+        g.name,
+        g.created_by,
+        g.created_at,
+        g.updated_at,
+        COUNT(gm.member_id) as member_count,
+        GROUP_CONCAT(
+          CONCAT(m.id, ':', m.name, ':', m.mobile, ':', m.s_type, ':', m.subject, ':', m.district) 
+          SEPARATOR ','
+        ) as members
+      FROM \`groups\` g
+      LEFT JOIN \`group_members\` gm ON g.id = gm.group_id
+      LEFT JOIN members m ON gm.member_id = m.id
+      WHERE g.id = ?
+      GROUP BY g.id, g.name, g.created_by, g.created_at, g.updated_at
+      ORDER BY g.created_at DESC
+    `;
+
+    connection.query(groupsSql, [id], (err, results) => {
+      connection.release();
+      
+      if (err) {
+        console.error('Groups fetch error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to fetch groups' });
+      }
+
+      // Parse members array for each group
+      const groups = results.map(group => ({
+        id: group.id,
+        name: group.name,
+        created_by: group.created_by,
+        created_at: group.created_at,
+        updated_at: group.updated_at,
+        member_count: group.member_count || 0,
+        members: group.members ? group.members.split(',').map(memberStr => {
+          const [id, name, mobile, s_type, subject, district] = memberStr.split(':');
+          return { id: parseInt(id), name, mobile, s_type, subject, district };
+        }) : []
+      }));
+
+      res.json({
+        success: true,
+        count: groups.length,
+        groups: groups
+      });
+    });
+  });
+};
+
 exports.updateGroup = (req, res) => {
   const { groupId } = req.params;
   const { name, members } = req.body;

@@ -109,7 +109,7 @@ exports.getfrm = (req, res) => {
     fsql = `SELECT id, type, name, detail, t_start, t_end, school, s_type, subject, locations FROM trainings WHERE id = ?`;
   }else if(usrfrm.substring(4,5) == '6'){
     type = 'Account';
-    msql = `SELECT id, type, name, staff_id, mobile, email, district, s_type, subject, acc,  FROM members WHERE id = ?`;    
+    msql = `SELECT id, type, name, staff_id, mobile, email, district, s_type, subject, acc  FROM members WHERE id = ?`;    
     fsql = `SELECT id, type, name, detail, t_start, t_end, locations FROM trainings WHERE id = ?`;
   }else if(usrfrm.substring(4,5) == '7'){
     type = 'Certificate';
