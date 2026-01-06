@@ -1,7 +1,7 @@
 
 const connection = require('../db');
 const {createSessions, customDate, encrypt} = require('../helpers/helper');
-const {sendGetRequest, sendBatchTraining, sendTrainermsg, sendObsInv, sendWHBatch} =require('../helpers/curls');
+const {sendGetRequest, sendBatchTraining, sendTrainermsg, sendObsInv, sendWHBatch, sendTrainermsgSingle} =require('../helpers/curls');
 const util = require('util');
 const query = util.promisify(connection.query).bind(connection);
 
@@ -2444,4 +2444,64 @@ exports.validateTrainingRequirementsUpdated = async (req, res) => {
         console.error(err);
         return res.status(500).json({ error: true, message: err.message });
     }
+};
+
+  exports.sendInvitationTrainer = (req, res) => {    
+    const tid = req.params.id;
+    const ids = req.body.participants;    
+    const user = req.user;
+
+    qry = `SELECT id, type, name, detail, t_start, t_end, JSON_UNQUOTE(JSON_EXTRACT(locations, '$[0].link')) location FROM trainings WHERE status = 'Active' AND id = ? `;
+    connection.query(qry, [tid], (err, data) => {
+      if (err) 
+        res.status(500).json({ error: err.message });
+      else {
+        const params = {ids, tid, tname: data[0].name, typ: data[0].type, detail: data[0].detail, cdate: customDate(data[0].t_start)+' to '+customDate(data[0].t_end), location: data[0].location, uid:user.id};
+        sendSingleTrainerInvitation(params, (err, results) => { if (err) console.error('Error sending messages:', err.message); else console.log('Messages sent successfully:', results);});
+        res.json({error: false, message: 'Trainee Invite proccesed'});
+      }
+    });
+  }
+
+exports.sendTmessageSingle = (req, res) => {
+    const tid = req.params.id; // Training ID from URL
+    const selectedTrainerId = req.body.id; // The specific trainer ID
+    const user = req.user;
+
+    if (!selectedTrainerId) {
+        return res.status(400).json({ error: true, message: 'No trainer selected.' });
+    }
+
+    const qry = `
+        SELECT type, name, detail, t_start, t_end, 
+        JSON_UNQUOTE(JSON_EXTRACT(locations, '$[0].link')) AS location 
+        FROM trainings 
+        WHERE status = 'Active' AND id = ?
+    `;
+
+    connection.query(qry, [tid], (err, data) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        if (!data || data.length === 0) {
+            return res.status(404).json({ error: true, message: 'Active training not found.' });
+        }
+
+        const training = data[0];
+
+        const params = {
+            id: selectedTrainerId, 
+            tid: tid,
+            tname: training.name,
+            typ: training.type,
+            detail: training.detail,
+            cdate: customDate(training.t_start) + ' to ' + customDate(training.t_end),
+            location: training.location,
+            uid: user.id
+        };
+
+        // Trigger the message function
+        sendTrainermsgSingle(params);
+
+        res.json({ error: false, message: 'Invitation sent to selected trainer' });
+    });
 };

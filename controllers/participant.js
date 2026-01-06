@@ -343,3 +343,51 @@ exports.chk = (req, res) => {
   chkMsg('id');
   res.json({error: false, message: 'Bank Verifcation proccesed'});  
 }
+
+exports.getTrainer = (req, res) => {
+  let type = req.query.type;  
+  const usrfrm = decrypt(type);
+  console.log(type, usrfrm);
+  let fsql = `SELECT id, type, name, detail, quests, mandatory, expire, if(forms.repeat = 'No', (SELECT if(COUNT(id) > 0, false, true) FROM responses WHERE type = 'Feedback' AND ref = forms.id AND created_by = ${parseInt(usrfrm.substring(0,4))}), true) process FROM forms WHERE id = ?`; //and (expire IS NULL OR expire > now())`;
+  let msql = `SELECT id, name, mobile FROM users WHERE id = ?`;  
+
+  if(usrfrm.substring(4,5) == '2'){
+    type = 'Training Detail';
+    fsql = `SELECT id, type, name, detail, t_start, t_end, school, s_type, subject, sessions, locations, topic, 
+        (SELECT group_concat(concat(name, '|', COALESCE(profile_file, ''))) FROM users WHERE Find_in_set(id, trainers)) trainers 
+        FROM trainings WHERE id = ?`;
+
+    //fsql = `SELECT id, type, name, detail, t_start, t_end, school, s_type, subject, sessions, locations, topic, 
+    //(SELECT group_concat(concat(name, '|', COALESCE(profile_file, ''))) FROM users WHERE Find_in_set(id, trainers)) trainers FROM trainings WHERE id = ?`;
+    //(SELECT group_concat(name) FROM users WHERE Find_in_set(id, trainers)) trainers FROM trainings WHERE id = ?`;
+
+  }
+  connection.query(msql, parseInt(usrfrm.substring(0,4)), (err, mem) => {
+    if (err) 
+      res.status(500).json({ error: err.message });
+    else {
+      if (mem.length === 0) 
+        res.status(404).json({error: true, message: 'Trainer Not Available' });      
+          if (type == 'Training Detail'){
+              connection.query(fsql, [parseInt(usrfrm.substring(5))], (err, training) => {  
+                if (err) {
+                  res.status(500).json({ error: err.message });
+                  return;
+                }
+                if (training.length > 0) {
+                  let data = training[0];
+                  if (data.trainers) {
+                      data.trainers = data.trainers.split(',').map(trainer => {
+                          const [name, profile] = trainer.split('|');
+                          return { name: name || '', profile: profile || '' };
+                      });
+                  }
+                  res.json({error: false, message: 'Training Data', type, member: mem, training: training});
+                }              
+              });                          
+          }
+          else
+            res.json({error: false, message: 'Public Form', type, member:mem});
+    }
+  });  
+}

@@ -1,5 +1,5 @@
 const connection = require('../db');
-const {sendMemMsg} =require('../helpers/curls');
+const {sendMemMsg, sendTrainingTadaMsg} =require('../helpers/curls');
 const {amtwrds} = require('../helpers/helper');
 
 exports.smtfrm = async (req, res) => {
@@ -16,7 +16,13 @@ exports.smtfrm = async (req, res) => {
           const params = {type:'TA-DA', id:data.created_by, uid:data.created_by, tid:data.ref};
           sendMemMsg(params);
           return res.json({error: false, message: 'Submitted Successfully', data:results, user});  
-        }else if(data.type == 'Account'){
+        }
+        else if(data.type == 'rstr' && data.response == '"Yes"'){
+          const params = {type:'TA-DA', id:data.created_by, uid:data.created_by, tid:data.ref};
+          sendTrainingTadaMsg(params);
+          return res.json({error: false, message: 'Submitted Successfully', data:results, user});
+        }
+        else if(data.type == 'Account'){
           const {fromDateTm, rj_toDateTm, distance, toTrvl, fare = 0, rj_fare = 0} = JSON.parse(data.response);
           const famt = parseFloat(fare) + parseFloat(rj_fare);
           let [dmy, time, meridian] = fromDateTm.split(" ");

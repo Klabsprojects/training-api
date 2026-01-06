@@ -188,7 +188,47 @@ function sendMemMsg(params) {
 
 }
 
+function sendTrainingTadaMsg(params) {   
 
+    const {type, id, uid, tid } = params;
+
+    const query = `SELECT mobile, name FROM users WHERE id = (${uid})`;
+
+
+
+    connection.query(query, (error, results) => {
+
+        queryParams.number = '91' + results[0].mobile;
+
+        queryParams.message =  `Dear *${results[0].name}*, \n\n*TNMSC* requested you to update TA-DA detail and Bank A/c confirmation on this link, https://mem.masclass.in/${encrypt(uid.toString().padStart(4, '0') + '6' + tid.toString().padStart(4, '0'))} \nYou will get PDF after form submission, take print and submit while attending training.  \n\nThank You`;        
+
+            
+
+        return axios.get(url, {params: queryParams })
+
+        .then((response) => {
+
+            const logContent = JSON.stringify({message: queryParams.message, response: response.data[0]});
+
+            connection.query(`INSERT INTO requests (type, ref, receiver, content, created_by) VALUES ('Tra-TADA', ?, ?, ?, ?)`, [tid, id, logContent, uid]);
+
+            console.log(`Message sent to ${queryParams.number}:`, response.data);
+
+        })
+
+        .catch((error) => {
+
+            const logContent = JSON.stringify({message: queryParams.message, error: error.message, stack: error.stack});
+
+            connection.query(`INSERT INTO requests (type, ref, receiver, content, created_by) VALUES ('Tra-TADA', ?, ?, ?, ?)`, [tid, id, logContent, uid]);
+
+            console.error(`Error sending message to ${queryParams.number}:`);//, error.message);
+
+        });
+
+    });
+
+}
 
 function sendTrainermsg(params) {   
 
@@ -231,8 +271,6 @@ function sendTrainermsg(params) {
     });
 
 }
-
-
 
 function sendObsInv(params) {   
 
@@ -328,7 +366,55 @@ Tamil Nadu Model Schools Training Team`;
 
 }
 
+function sendTrainermsgSingle(params) {
+    const { id, tid, tname, typ, detail, cdate, location, uid } = params;
+
+    // Fetch details for the specific trainer
+    const query = `SELECT id, mobile, name FROM users WHERE id = ?`;
+
+    connection.query(query, [id], (error, results) => {
+        if (error || !results.length) {
+            console.error(`Error: Trainer with ID ${id} not found or query failed.`);
+            return;
+        }
+
+        const trainer = results[0];
+        const formattedNumber = '91' + trainer.mobile;
+        
+        // Generate the unique registration link
+        const encryptedLink = encrypt(id.toString().padStart(4, '0') + '2' + tid.toString().padStart(4, '0'));
+        const link = `https://mem.masclass.in/${encryptedLink}`;
+
+        // Construct Message
+        const message = `*${typ} - ${tname}* new training assigned \n\n${detail}\n\n *Date* : ${cdate}\n *Location* : ${location}\n\n Please, confirm your participation by registering here: ${link}`;
+
+        // Prepare Axios Request
+        axios.get(url, { 
+            params: { 
+                ...queryParams, // Includes your API keys/token
+                number: formattedNumber, 
+                message: message 
+            } 
+        })
+        .then((response) => {
+            const logContent = JSON.stringify({ message: message, response: response.data });
+            connection.query(
+                `INSERT INTO requests (type, ref, receiver, content, created_by) VALUES ('Train-Stf', ?, ?, ?, ?)`, 
+                [tid, id, logContent, uid]
+            );
+            console.log(`Message successfully sent to Trainer: ${trainer.name}`);
+        })
+        .catch((err) => {
+            const logContent = JSON.stringify({ message: message, error: err.message });
+            connection.query(
+                `INSERT INTO requests (type, ref, receiver, content, created_by) VALUES ('Train-Stf', ?, ?, ?, ?)`, 
+                [tid, id, logContent, uid]
+            );
+            console.error(`Failed to send message to ${formattedNumber}: ${err.message}`);
+        });
+    });
+}
 
 
-module.exports = {sendWHBatch, sendBatchTraining, sendTrainermsg, sendObsInv, sendMemMsg, chkMsg};
+module.exports = {sendWHBatch, sendBatchTraining, sendTrainermsg, sendObsInv, sendMemMsg, chkMsg, sendTrainermsgSingle, sendTrainingTadaMsg};
 

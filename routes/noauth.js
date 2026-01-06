@@ -16,4 +16,8 @@ router.get('/list/*', ct_part.list);
 router.get('/certificate', ct_part.memcert);
 router.get('/tada_cal', ct_part.TADACal);
 
+router.post('/sendTrainerConfirmation', ct_res.smtfrm);
+
+router.get('/getTrainer', ct_part.getTrainer);
+
 module.exports = router;
