@@ -539,8 +539,11 @@ if(data.location){
     const id = req.params.id;
     const user = req.user;
     const {type, form} = req.query;
-    qry = `SELECT id, type, name, staff_id, mobile, district, subject, s_type, invited, if(invited is null, 'pending', if(response is null, 'invited', response)) status, acc, JSON_UNQUOTE(JSON_EXTRACT(acc, '$.verified')) acc_verify FROM members left join (SELECT receiver, COUNT(*) invited FROM requests WHERE type = 'Train-Par' AND ref = ? group by receiver) inv on members.id = receiver left join (SELECT distinct created_by, replace(response,'"','') response FROM responses WHERE type = 'RSVP' AND ref = ?) rsvp on members.id = rsvp.created_by WHERE type = 'Teacher' and find_in_set(id, (SELECT replace(participants, ' ','') FROM trainings WHERE id = ?))`;
-    connection.query(qry, [id, id, id], (err, results) => {
+    qry = `SELECT id, r.food, r.accommodation, type, name, staff_id, mobile, district, subject, s_type, invited, if(invited is null, 'pending', if(response is null, 'invited', response)) status, acc, JSON_UNQUOTE(JSON_EXTRACT(acc, '$.verified')) acc_verify FROM members 
+    left join (SELECT food , accommodation, created_by from responses where type in ('rsvp','rstr') and ref = ?) r on members.id = r.created_by
+    left join (SELECT receiver, COUNT(*) invited FROM requests WHERE type = 'Train-Par' AND ref = ? group by receiver) inv on members.id = receiver 
+    left join (SELECT distinct created_by, replace(response,'"','') response FROM responses WHERE type = 'RSVP' AND ref = ?) rsvp on members.id = rsvp.created_by WHERE type = 'Teacher' and find_in_set(id, (SELECT replace(participants, ' ','') FROM trainings WHERE id = ?))`;
+    connection.query(qry, [id, id, id, id], (err, results) => {
       if (err) return res.status(500).json({ error: err.message });
       if (results.length === 0) return res.status(404).json({error: true, message: 'No Participants added' });
           if(!type){
@@ -2518,6 +2521,8 @@ exports.getTrainerDetails = (req, res) => {
     // 2. Updated Query with your specific logic changes
     const qry = `
         SELECT 
+    r. food, 
+    r.accommodation,
     u.id, 
     u.name, 
     u.mobile, 
@@ -2529,6 +2534,7 @@ exports.getTrainerDetails = (req, res) => {
         IF(res.response_val IS NULL, 'invited', res.response_val)
     ) AS status
 FROM users u
+left join (SELECT food , accommodation, created_by from responses where type in ('rsvp','rstr') and ref = ?) r on u.id = r.created_by
 LEFT JOIN (
     /* Check for Trainer/Staff Invitations */
     SELECT receiver, COUNT(*) AS invited_count 
@@ -2545,7 +2551,7 @@ LEFT JOIN (
 WHERE FIND_IN_SET(u.id, (SELECT REPLACE(trainers, ' ', '') FROM trainings WHERE id = ?))`;
 
     // 3. Execute query using the trainingId for all three placeholders (?)
-    connection.query(qry, [trainingId, trainingId, trainingId], (err, results) => {
+    connection.query(qry, [trainingId, trainingId, trainingId, trainingId], (err, results) => {
         if (err) {
             console.error("Database Error:", err);
             return res.status(500).json({ error: true, message: err.message });
