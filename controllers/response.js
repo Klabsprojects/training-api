@@ -20,8 +20,7 @@ exports.smtfrm = async (req, res) => {
           return res.json({error: false, message: 'Submitted Successfully', data:results, user});  
         }
         else if(data.type == 'rstr' && data.response == '"Yes"'){
-          const params = {type:'TA-DA', id:data.created_by, uid:data.created_by, tid:data.ref,
-            accomodation: data.accomodation, food: data.food
+          const params = {type:'TA-DA', id:data.created_by, uid:data.created_by, tid:data.ref
           };
           sendTrainingTadaMsg(params);
           return res.json({error: false, message: 'Submitted Successfully', data:results, user});
