@@ -7,18 +7,22 @@ exports.smtfrm = async (req, res) => {
     const user = req.user;
 
     data.response = JSON.stringify(data.response); 
+    console.log(data);
     
     connection.query('INSERT INTO responses SET ?', data, (err, results) => {
       if (err) 
         res.status(500).json({ error: err.message });
       else 
         if(data.type == 'rsvp' && data.response == '"Yes"'){ 
-          const params = {type:'TA-DA', id:data.created_by, uid:data.created_by, tid:data.ref};
+          const params = {type:'TA-DA', id:data.created_by, uid:data.created_by, tid:data.ref
+          };
           sendMemMsg(params);
           return res.json({error: false, message: 'Submitted Successfully', data:results, user});  
         }
         else if(data.type == 'rstr' && data.response == '"Yes"'){
-          const params = {type:'TA-DA', id:data.created_by, uid:data.created_by, tid:data.ref};
+          const params = {type:'TA-DA', id:data.created_by, uid:data.created_by, tid:data.ref,
+            accomodation: data.accomodation, food: data.food
+          };
           sendTrainingTadaMsg(params);
           return res.json({error: false, message: 'Submitted Successfully', data:results, user});
         }

@@ -36,5 +36,6 @@ router.get('/needForms/:id', ct_tra.getNeedForms);
 router.get('/mandatoryTrainingRequirements/:id', ct_tra.validateTrainingRequirementsUpdated);
 
 router.post('/trainer-invitation/:id', ct_tra.sendTmessageSingle);
+router.get('/trainers/:id', ct_tra.getTrainerDetails);
 
 module.exports = router;

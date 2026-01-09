@@ -46,11 +46,11 @@ function sendWHBatch(params) {
 
             if(type == 'Form')
 
-                queryParams.message =  `*TNMSC* requested you to update, \n*${title}* \nform on this link, https://mem.masclass.in/${encrypt(id.toString().padStart(4, '0') + '1' + fid.toString().padStart(4, '0'))} \n\nThank You`;
+                queryParams.message =  `*TNGMS* requested you to update, \n*${title}* \nform on this link, https://mem.masclass.in/${encrypt(id.toString().padStart(4, '0') + '1' + fid.toString().padStart(4, '0'))} \n\nThank You`;
 
             else if(type == 'Material')
 
-                queryParams.message =  `*TNMSC* shared you, \n${title} \nget from this link, https://mem.masclass.in/${encrypt(id.toString().padStart(4, '0') + '8' + fid.toString().padStart(4, '0'))} \n\nThank You`;
+                queryParams.message =  `*TNGMS* shared you, \n${title} \nget from this link, https://mem.masclass.in/${encrypt(id.toString().padStart(4, '0') + '8' + fid.toString().padStart(4, '0'))} \n\nThank You`;
 
            
 
@@ -158,7 +158,7 @@ function sendMemMsg(params) {
 
         queryParams.number = '91' + results[0].mobile;
 
-        queryParams.message =  `Dear *${results[0].name}*, \n\n*TNMSC* requested you to update TA-DA detail and Bank A/c confirmation on this link, https://mem.masclass.in/${encrypt(uid.toString().padStart(4, '0') + '6' + tid.toString().padStart(4, '0'))} \nYou will get PDF after form submission, take print and submit while attending training.  \n\nThank You`;        
+        queryParams.message =  `Dear *${results[0].name}*, \n\n*TNGMS* requested you to update TA-DA detail and Bank A/c confirmation on this link, https://mem.masclass.in/${encrypt(uid.toString().padStart(4, '0') + '6' + tid.toString().padStart(4, '0'))} \nYou will get PDF after form submission, take print and submit while attending training.  \n\nThank You`;        
 
             
 
@@ -200,7 +200,7 @@ function sendTrainingTadaMsg(params) {
 
         queryParams.number = '91' + results[0].mobile;
 
-        queryParams.message =  `Dear *${results[0].name}*, \n\n*TNMSC* requested you to update TA-DA detail and Bank A/c confirmation on this link, https://mem.masclass.in/${encrypt(uid.toString().padStart(4, '0') + '6' + tid.toString().padStart(4, '0'))} \nYou will get PDF after form submission, take print and submit while attending training.  \n\nThank You`;        
+        queryParams.message =  `Dear *${results[0].name}*, \n\n*TNGMS* requested you to update TA-DA detail and Bank A/c confirmation on this link, https://mem.masclass.in/${encrypt(uid.toString().padStart(4, '0') + 'b' + tid.toString().padStart(4, '0'))} \nYou will get PDF after form submission, take print and submit while attending training.  \n\nThank You`;        
 
             
 
@@ -284,7 +284,7 @@ function sendObsInv(params) {
 
         queryParams.number = '91' + results[0].mobile;
 
-        queryParams.message = `Dear *${results[0].name}*, \n\nTNMSC invited you as training observer \n\n${results[0].tdetail} \n\nYou can share you training feedback to us on this link https://mem.masclass.in/${encrypt(results[0].id.toString().padStart(4, '0') + '10006')} \n\nThank You...`;
+        queryParams.message = `Dear *${results[0].name}*, \n\nTNGMS invited you as training observer \n\n${results[0].tdetail} \n\nYou can share you training feedback to us on this link https://mem.masclass.in/${encrypt(results[0].id.toString().padStart(4, '0') + '10006')} \n\nThank You...`;
 
 
 
@@ -382,7 +382,7 @@ function sendTrainermsgSingle(params) {
         const formattedNumber = '91' + trainer.mobile;
         
         // Generate the unique registration link
-        const encryptedLink = encrypt(id.toString().padStart(4, '0') + '2' + tid.toString().padStart(4, '0'));
+        const encryptedLink = encrypt(id.toString().padStart(4, '0') + 'a' + tid.toString().padStart(4, '0'));
         const link = `https://mem.masclass.in/${encryptedLink}`;
 
         // Construct Message

@@ -344,7 +344,7 @@ exports.chk = (req, res) => {
   res.json({error: false, message: 'Bank Verifcation proccesed'});  
 }
 
-exports.getTrainer = (req, res) => {
+exports.getTrainerOld = (req, res) => {
   let type = req.query.type;  
   const usrfrm = decrypt(type);
   console.log(type, usrfrm);
@@ -382,12 +382,74 @@ exports.getTrainer = (req, res) => {
                           return { name: name || '', profile: profile || '' };
                       });
                   }
-                  res.json({error: false, message: 'Training Data', type, member: mem, training: training});
+                  res.json({error: false, message: 'Training Data', type, trainer: mem, training: training});
                 }              
               });                          
           }
           else
-            res.json({error: false, message: 'Public Form', type, member:mem});
+            res.json({error: false, message: 'Public Form', type, trainer:mem});
     }
   });  
 }
+
+exports.getTrainer = (req, res) => {
+    let type = req.query.type;  
+    const usrfrm = decrypt(type);
+    
+console.log("Full Decrypted String:", usrfrm);
+console.log("Extracted Flag:", usrfrm.substring(4, 5));
+console.log("Extracted ID String:", usrfrm.substring(5));
+console.log("Parsed ID Number:", parseInt(usrfrm.substring(5)));
+    // 1. Extract the flag from the 5th position (index 4)
+    const flag = usrfrm.substring(4, 5);
+    const userId = parseInt(usrfrm.substring(0, 4));
+    const recordId = parseInt(usrfrm.substring(5));
+
+    // Default SQL for Public Forms
+    let fsql = `SELECT id, type, name, detail, quests, mandatory, expire, 
+                if(forms.repeat = 'No', (SELECT if(COUNT(id) > 0, false, true) 
+                FROM responses WHERE type = 'Feedback' AND ref = forms.id AND created_by = ?), true) as process 
+                FROM forms WHERE id = ?`;
+
+    let msql = `SELECT id, name, mobile FROM users WHERE id = ?`;  
+
+    // 2. Change '2' to 'a' here
+    if (flag === 'a' || flag === 'b') {
+        type = 'Training Detail';
+        fsql = `SELECT id, type, name, detail, t_start, t_end, school, s_type, subject, sessions, locations, topic, 
+                (SELECT group_concat(concat(name, '|', COALESCE(profile_file, ''))) FROM users WHERE Find_in_set(id, trainers)) trainers 
+                FROM trainings WHERE id = ?`;
+    }
+
+    connection.query(msql, [userId], (err, mem) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (mem.length === 0) return res.status(404).json({ error: true, message: 'Trainer Not Available' });
+
+        // 3. Match the flow based on the 'a' flag trigger
+        if (flag === 'a' || flag === 'b') {
+            connection.query(fsql, [recordId], (err, training) => {  
+                if (err) return res.status(500).json({ error: err.message });
+                
+                if (training.length > 0) {
+                    let data = training[0];
+                    if (data.trainers) {
+                        data.trainers = data.trainers.split(',').map(trainer => {
+                            const [name, profile] = trainer.split('|');
+                            return { name: name || '', profile: profile || '' };
+                        });
+                    }
+                    res.json({ error: false, message: 'Training Data', type, trainer: mem, training: training });
+                } else {
+                    res.status(404).json({ error: true, message: 'No Training Found' });
+                }
+            });              
+        } else {
+            // Flow for the default Public Form (passing userId for the 'process' check)
+            connection.query(fsql, [userId, recordId], (err, form) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ error: false, message: 'Public Form', type, trainer: mem, formData: form });
+            });
+        }
+    });
+};
+

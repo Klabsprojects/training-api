@@ -2505,3 +2505,58 @@ exports.sendTmessageSingle = (req, res) => {
         res.json({ error: false, message: 'Invitation sent to selected trainer' });
     });
 };
+
+exports.getTrainerDetails = (req, res) => {
+    // 1. Get the Training ID directly from the query parameter
+    // Example URL: /api/staff-details?id=25&type=...
+    const trainingId = req.params.id;
+
+    if (!trainingId) {
+        return res.status(400).json({ error: true, message: 'Training ID is required' });
+    }
+
+    // 2. Updated Query with your specific logic changes
+    const qry = `
+        SELECT 
+    u.id, 
+    u.name, 
+    u.mobile, 
+    u.email, 
+    u.profile_file,
+    inv.invited_count,
+    /* Status logic: checks for 'Train-Stf' invitations and 'RSTR' responses */
+    IF(inv.invited_count IS NULL, 'pending', 
+        IF(res.response_val IS NULL, 'invited', res.response_val)
+    ) AS status
+FROM users u
+LEFT JOIN (
+    /* Check for Trainer/Staff Invitations */
+    SELECT receiver, COUNT(*) AS invited_count 
+    FROM requests 
+    WHERE type = 'Train-Stf' AND ref = ? 
+    GROUP BY receiver
+) inv ON u.id = inv.receiver 
+LEFT JOIN (
+    /* Check for Trainer/Staff Responses */
+    SELECT DISTINCT created_by, REPLACE(response, '"', '') AS response_val 
+    FROM responses 
+    WHERE type = 'RSTR' AND ref = ?
+) res ON u.id = res.created_by 
+WHERE FIND_IN_SET(u.id, (SELECT REPLACE(trainers, ' ', '') FROM trainings WHERE id = ?))`;
+
+    // 3. Execute query using the trainingId for all three placeholders (?)
+    connection.query(qry, [trainingId, trainingId, trainingId], (err, results) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ error: true, message: err.message });
+        }
+
+        res.json({
+            error: false,
+            message: 'Staff Details Fetched',
+            results_count: results.length,
+            training_id: trainingId,
+            data: results
+        });
+    });
+};
